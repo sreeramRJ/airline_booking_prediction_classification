@@ -37,3 +37,12 @@ The code does the following:
   - split data into test and training sets in a meaningful way
 - model:
   - a classifier of your choice that predicts the conversion-likelihood of a user
+  
+Total runtime : ~ 8 min
+
+## Execution instructions
+* Install dependancies : pip install -r requirements.txt
+* Run python executable(with input files as argument) : python src/booking_prediction.py data/iata_1_1.csv data/events_1_1.csv.gz
+
+## Result
+You can find the screenshot of result in result.png
