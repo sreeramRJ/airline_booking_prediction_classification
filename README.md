@@ -36,7 +36,7 @@ The code does the following:
 - experimental design:
   - split data into test and training sets in a meaningful way
 - model:
-  - a classifier of your choice that predicts the conversion-likelihood of a user
+  - a LGBMclassifier that predicts the conversion-likelihood of a user
   
 Total runtime : ~ 8 min
 
