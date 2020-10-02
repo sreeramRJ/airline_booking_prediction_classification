@@ -7,6 +7,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # copy files required for the app to run
 COPY booking_prediction.py /
+COPY data/iata_1_1.csv /
+COPY data/events_1_1.csv.gz /
 
 # run the application
-CMD ["python", "./booking_prediction.py", "data/iata_1_1.csv", "data/events_1_1.csv.gz"]
+CMD ["python", "booking_prediction.py", "iata_1_1.csv", "events_1_1.csv.gz"]

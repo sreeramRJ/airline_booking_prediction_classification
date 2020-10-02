@@ -9,8 +9,10 @@ import lightgbm as lgb
 from sklearn.metrics import classification_report
 from sklearn.metrics import confusion_matrix  
 from sklearn.metrics import accuracy_score
-from sklearn.feature_selection import SelectKBest
-from sklearn.feature_selection import chi2
+from sklearn.model_selection import GridSearchCV
+import warnings
+from numpy import mean
+import time
 
 import sys
 
@@ -18,12 +20,29 @@ import sys
 def data_read(x,y):
     iata = pd.read_csv(x)
     events = pd.read_csv(y)
-    merged_data = events.merge(iata,left_on='origin',right_on='iata_code').drop('iata_code',axis=1)
-    merged_data = merged_data.rename(columns={'lat':'origin_lat','lon':'origin_lon'})
-    merged_data = merged_data.merge(iata,left_on='destination',right_on='iata_code').drop('iata_code',axis=1)
-    merged_data = merged_data.rename(columns={'lat':'destination_lat','lon':'destination_lon'})
-    return merged_data
+    booking_data = events.merge(iata,left_on='origin',right_on='iata_code').drop('iata_code',axis=1)
+    booking_data = booking_data.rename(columns={'lat':'origin_lat','lon':'origin_lon'})
+    booking_data = booking_data.merge(iata,left_on='destination',right_on='iata_code').drop('iata_code',axis=1)
+    booking_data = booking_data.rename(columns={'lat':'destination_lat','lon':'destination_lon'})
+    return booking_data
 	
+#function to handle data pre-processing    
+def data_preprocessing(booking_data):
+    #remove NA values
+    booking_data = booking_data.dropna()
+
+    booking_data = add_columns(booking_data)
+
+    booking_data = encoding_function(booking_data)
+
+    # Removing unwanted columns
+    booking_data.drop(['date_from','date_to','look_on','origin','destination','event_type','ts','user_id','origin_lat','origin_lon','destination_lat','destination_lon'],axis=1,inplace=True)
+
+    #remove records where 'days_before_plan' is negative as it is meaningless
+    booking_data = booking_data.loc[booking_data['days_before_plan'] > 0]
+
+    return booking_data
+    
 #function to calculate the geo-distance between 2 lat-lon co-ordinates
 def haversine_vectorize(lon1, lat1, lon2, lat2):
 
@@ -87,53 +106,65 @@ def sampling_func(X_train,y_train):
 	x_train_res, y_train_res = sm.fit_sample(X_train, y_train)
 	return x_train_res, y_train_res
 	
+    
+def model_evaluation(model,X,y):
+    lg = lgb.LGBMClassifier(silent=False)
+    param_dist = {"max_depth": [25,50, 75],
+              "learning_rate" : [0.01,0.05,0.1],
+              "num_leaves": [300,900,1200],
+              "n_estimators": [200]
+             }
+    grid_search = GridSearchCV(lg, n_jobs=-1, param_grid=param_dist, cv = 3, scoring="roc_auc", verbose=5)
+    grid_search.fit(X,y)
+    return grid_search.best_estimator_
+    
 def model_fit(x_train,x_test,y_train,y_test):
-	# fit a lightGBM classifier model to the data
-	# Why LightGBM? - It works great with categorical features
-	# categorical_feature = ['activity_month','origin_enc','destination_enc','travel_start_month','activity_hour']
-	model = lgb.LGBMClassifier(loss_function= 'binary_logloss', custom_metric=['Accuracy','AUC'],eval_metric='F1')
-	model.fit(x_train, y_train, eval_set=(x_test, y_test), feature_name='auto', categorical_feature = ['activity_month','origin_enc','destination_enc','travel_start_month','activity_hour'], verbose=50, early_stopping_rounds=10)
-	print(); print(model)
-	# make predictions
-	expected_y  = y_test
-	y_pred = model.predict(X_test)
-	return y_pred
+    # fit a lightGBM classifier model to the data
+    # Why LightGBM? - It works great with categorical features
+    # categorical_feature = ['activity_month','origin_enc','destination_enc','travel_start_month','activity_hour']
+    params = {'verbose': -1}
+    model = lgb.LGBMClassifier()
+    model2 = model_evaluation(model,x_train,y_train)
+    model2.fit(x_train, y_train, eval_set=(x_test, y_test), feature_name='auto', categorical_feature = ['activity_month','origin_enc','destination_enc','travel_start_month','activity_hour'], early_stopping_rounds=100)
+    print(); print(model2)
+    # make predictions
+    y_pred = model2.predict(X_test)
+    # importance of each attribute
+    model2.booster_.feature_importance()
+    fea_imp_ = pd.DataFrame({'cols':x_train.columns, 'fea_imp':model2.feature_importances_})
+    return y_pred, fea_imp_
 	
 if __name__=="__main__":
-	
-	iata = sys.argv[1]
-	events = sys.argv[2]
-	#read data
-	booking_data = data_read(iata,events)
-	
-	#remove NA values
-	booking_data = booking_data.dropna()
-	
-	booking_data = add_columns(booking_data)
-	
-	booking_data = encoding_function(booking_data)
-	
-	# Removing unwanted columns
-	booking_data.drop(['date_from','date_to','look_on','origin','destination','event_type','ts','user_id','origin_lat','origin_lon','destination_lat','destination_lon'],axis=1,inplace=True)
-	
-	#remove records where 'days_before_plan' is negative as it is meaningless
-	booking_data = booking_data.loc[booking_data['days_before_plan'] > 0]
-	
-	#split the dataset into independant and dependant features for model training and validation
-	X = booking_data.loc[:, booking_data.columns != 'event_type_enc']
-	y = booking_data.loc[:, booking_data.columns == 'event_type_enc']
-	
-	X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=1)
-	
-	X_train, y_train = sampling_func(X_train,y_train)
-	
-	y_pred = model_fit(X_train, X_test, y_train, y_test)
-	
-	# summarize the fit of the model
-	target_names = ['book', 'not_book']
-	print(); print(classification_report(expected_y, y_pred,target_names=target_names))
-	print(); print(confusion_matrix(expected_y, y_pred))
-	
-	
-	
+    start_time = time.time()
+    warnings.filterwarnings('ignore')
+    iata = sys.argv[1]
+    events = sys.argv[2]
+    #read data
+    booking_data = data_read(iata,events)
+
+    #clean-up and pre-process the dataset to be suitable for model training and evaluation
+    booking_data_preprocessed = data_preprocessing(booking_data)
+
+    #split the dataset into independant and dependant features for model training and validation
+    X = booking_data_preprocessed.loc[:, booking_data_preprocessed.columns != 'event_type_enc']
+    y = booking_data_preprocessed.loc[:, booking_data_preprocessed.columns == 'event_type_enc']
+
+    
+    #split dataset intotrain and test for evaluation
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=1)
+
+    #sampling function since dataset is unbalanced
+    X_train_oversample, y_train_oversample = sampling_func(X_train,y_train)
+
+    #model fit, prediction and evaluation
+    y_pred, feature_importance = model_fit(X_train_oversample, X_test, y_train_oversample, y_test)
+
+    # summarize the fit of the model
+    target_names = ['book', 'not_book']
+    print(); print(classification_report(y_test, y_pred,target_names=target_names))
+    print(); print(confusion_matrix(y_test, y_pred))
+
+    print(feature_importance.loc[feature_importance.fea_imp > 0].sort_values(by=['fea_imp'], ascending = False))
+    print("--- %s seconds ---" % (time.time() - start_time))
+
 	
