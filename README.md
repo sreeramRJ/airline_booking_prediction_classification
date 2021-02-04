@@ -2,12 +2,11 @@
 
 ## Goal
 
-One of the main problems we face at travel is identifying users that will eventually book a trip to an advertised destination. In this challenge, you are tasked to build a classifier to predict the conversion likelihood of a user based on previous search events, with emphasis on the feature engineering and evaluation part.
+One of the main problems we face at travel is identifying users that will eventually book a trip to an advertised destination. Here, we try to build a classifier to predict the conversion likelihood of a user based on previous search events.
 
 
 ## Data
-
-You are provided with two sample data sets
+We have two sample data sets
 
 - `events.csv.gz` - A sample of events collected from an online travel agency, containing:
   * `ts` - the timestamp of the event
